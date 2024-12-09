@@ -10,14 +10,12 @@ mutable struct state
     ω1::Float64,
     ω2::Float64
 end
-
-
 begin
     @independent_variables t
-    @parameters mc m1 m2 L1 L2 g F(t)
-    
+    @parameters mc m1 m2 L1 L2 g
+
     # Define states and their derivatives explicitly
-    @variables x(t) θ1(t) θ2(t) dx(t) dθ1(t) dθ2(t) 
+    @variables x(t) θ1(t) θ2(t) dx(t) dθ1(t) dθ2(t)
     xs = [x, θ1, θ2] #all motion variables 
     d = Differential(t) #d/dt
     ω1 = d(θ1)
@@ -29,9 +27,8 @@ begin
     eqs = [
         dx ~ d(x),
         dθ1 ~ d(θ1),
-        dθ2 ~ d(θ2)
+        dθ2 ~ d(θ2),
     ]
-    
     I1 = m1*L1^2
     I2 = m2*L2^2
     l1 = L1
@@ -49,94 +46,80 @@ begin
     V = g*(m1*l1 + m2*L1)*cos(θ1) + m2*g*l2*cos(θ2)
     L = T - V
 
-    println(T1)
-    println(T2)
-    println(T3)
 
-
-    EL = expand_derivatives(d(Differential(dx)(L))) - expand_derivatives(Differential(x)(L))
-    push!(eqs, EL ~ F)
+    function force(θ1, x, t)
+        return rand()
+    end
+    force(1, 1, 1)
+    println("adding force")
+    EL = expand_derivatives(d(Differential(dx)(L))) - expand_derivatives(Differential(x)(L)) ~ force(θ1, x, t)
+    push!(eqs, EL )
 
     # Add Euler-Lagrange equations
     for (q, dq) in [(θ1, dθ1), (θ2, dθ2)]
         EL = expand_derivatives(d(Differential(dq)(L))) - expand_derivatives(Differential(q)(L))
         push!(eqs, EL ~ 0)
     end
-
-    @named HO = ODESystem(eqs, t, [x, θ1, θ2, dx, dθ1, dθ2], [mc, m1, m2, L1, L2, g, F])
+    @named HO = ODESystem(eqs, t, [x, θ1, θ2, dx, dθ1, dθ2], [mc, m1, m2, L1, L2, g])
     HO = structural_simplify(HO)
-    print(eqs)
-    # function control_affect!(integrator)
-    #     state = integrator.u
-    #     force = CONTROL(state)
-    #     integrator.p[F] = force  # Assuming F is last parameter
-    #     println("t: $(integrator.t), F: $force")  # To verify it's running
-
-    # end
-    # force_update = [x ~ x] => (control_affect!, xs, [mc, m1, m2, L1, L2, g, F], [], nothing)
-
-    function affect!(integ)
-        # println(integ.t)
-        # println(integ.u)
-        println("affect")
-    end
-    # updatef = [x ~ 1] => (affect!, [x, θ1, θ2], [F], [F], nothing)
-
-    @mtkbuild control_system = ODESystem(eqs, t, [x, θ1, θ2, dx, dθ1, dθ2], [mc, m1, m2, L1, L2, g, F])
-
     # Initial conditions
     IC = [
         x => 0,
-        θ1 => 1,
-        θ2 => 0,
+        θ1 => π-.1,
+        θ2 => π,
         dx => 0,
         dθ1 => 0,
         dθ2 => 0,
-        
-
+    
     ]
     
-    tspan = (0, 20)
+    tspan = (0, 10)
     
-    function cont(t)
-        return sin(t)
-    end
+#     function cont(t)
+#         return sin(t)
+#     end
+    println("defining problem")
+    prob = ODEProblem(HO, IC, tspan, [mc=>5, m1=>1, m2=>1, L1=>1, L2=>1, g=>-9.8])
+    println("solving")
+    @time solve(prob, ImplicitMidpoint(), dt=0.05)
+    println("done")
+ 
 
-    prob = ODEProblem(control_system, IC, tspan, [mc=>1, m1=>1, m2=>1, L1=>1, L2=>1, g=>-9.8, F=>0])
-    sol = solve(prob, Rodas5P())
-    plot(transpose(sol[1:3, :]))
 end
+function make_animation(sol; L1=1.0, L2=1.0)
+    anim = @animate for i in 1:2:length(sol.t)
+        t = sol.t[i]
+        x_cart = sol[x][i]  # Directly extract x(t)
+        θ1_pendulum = sol[θ1][i]  # Directly extract θ1(t)
+        θ2_pendulum = sol[θ2][i]  # Directly extract θ2(t)
 
+        # Cart position
+        cart_x = x_cart
+        cart_y = 0.0
+
+        # First pendulum position
+        pendulum1_x = cart_x + L1 * sin(θ1_pendulum)
+        pendulum1_y = -L1 * cos(θ1_pendulum)
+
+        # Second pendulum position
+        pendulum2_x = pendulum1_x + L2 * sin(θ2_pendulum)
+        pendulum2_y = pendulum1_y - L2 * cos(θ2_pendulum)
+
+        # Plot setup
+        plot([-5, 5], [0, 0], color=:black, label="", lw=2)  # Ground line
+        scatter!([cart_x], [cart_y], color=:blue, label="Cart", ms=5)
+        plot!([cart_x, pendulum1_x], [cart_y, pendulum1_y], label="Pendulum 1", lw=2, color=:red)
+        scatter!([pendulum1_x], [pendulum1_y], color=:red, label="", ms=5)
+        plot!([pendulum1_x, pendulum2_x], [pendulum1_y, pendulum2_y], label="Pendulum 2", lw=2, color=:green)
+        scatter!([pendulum2_x], [pendulum2_y], color=:green, label="", ms=5)
+
+        xlims!(-5, 5)
+        ylims!(-5, 5)
+        title!("Cart-Pendulum System at t = $(round(t, digits=2))")
+    end
+    gif(anim, "cart_pendulum_animation.gif", fps=120)
+end
 
 begin
-
-
-    function s()
-        IC = [
-            x => 0,
-            θ1 => 0.053,
-            θ2 => π,
-            dx => 0,
-            dθ1 => 0,
-            dθ2 => 0
-        ]
-
-        M = [mc=>5,
-        m1=>1, m2=>1, L1=>1, L2=>1, g=>9.8]
-
-        tspan = (0, 30)
-        println("Defining problem")
-        prob = ODEProblem(HO, IC, tspan, M)
-        println(prob)
-        println("solving")
-        sol = solve(prob, ImplicitMidpoint(), dt=0.01)
-        println("done")
-        return sol
-    end
-    
-    sol = s()
-    println("plotting")
-    plot(sol.t, transpose(sol[1:3, :]))
+    make_animation(sol)
 end
-
-
