@@ -3,36 +3,15 @@ using Plots
 using Symbolics
 using SciMLStructures:Tunable, replace, replace!
 using SymbolicIndexingInterface: parameter_values, state_values
-using ModelingToolkit: Nonnumeric, structural_parameters
-
-
-
-struct state
-    x::Real
-    θ1::Real
-    θ2::Real
-    dx::Real
-    ω1::Real
-    ω2::Real
-end
-
-
-
-
-
+using ModelingToolkit: Nonnumeric
 
 begin
-
     function createSystem( H_ARG::DataType)
         @independent_variables t
         # Define states and their derivatives explicitly
         @variables x(t) θ1(t) θ2(t) dx(t) dθ1(t) dθ2(t)
         @parameters  mc m1 m2 L1 L2 g H(::Real, ::Real, ::Real, ::Real, ::Real, ::Real, ::H_ARG) ARGS::H_ARG
-        xs = [x, θ1, θ2] #all motion variables 
         d = Differential(t) #d/dt
-        ω1 = d(θ1)
-        ω2 = d(θ2)
-        ẋ  = d(x)
 
 
         # Define first-order equations
@@ -58,7 +37,6 @@ begin
         T = T1 + T2 + T3 + T4 + T5 + T6
         V = g*(m1*l1 + m2*L1)*cos(θ1) + m2*g*l2*cos(θ2)
         L = T - V
-        st = state(x, θ1, θ2, dx, dθ1, dθ2)
         EL = expand_derivatives(d(Differential(dx)(L))) - expand_derivatives(Differential(x)(L)) ~ H(x, θ1, θ2, dx, dθ1, dθ2, ARGS)  # force(θ1, x, t)
         push!(eqs, EL )
         EL = expand_derivatives(d(Differential(dθ1)(L))) - expand_derivatives(Differential(θ1)(L)) ~ 0#H(θ1, θ2, t)  # force(θ1, x, t)
@@ -87,13 +65,9 @@ begin
     
     function loss(prob,x, ICs)
         ps = parameter_values(prob)
-        println(ps[1])
-        ps = replace(Tunable(), ps, x)
-        # println("aaa")
         # println(ps[1])
+        ps = replace(Tunable(), ps, x)
         newprob = remake(prob; u0=ICs, p=ps )
-        # println("a")
-        # println(newprob.u0)
         sol = solve(newprob,ImplicitMidpoint(),dt=0.05)
         return sol
     end
@@ -103,8 +77,9 @@ begin
         b::Float64
     end
     function example()
+        
         function FORCE(x, θ1, θ2, v, ω1, ω2, ARGS)
-            return -x + θ1 + ARGS.a * ARGS.b + sin(v)
+            return 0
         end
 
 
@@ -115,52 +90,23 @@ begin
         plot(sol.t, transpose(sol[1:3, :]))
 
 
-        ainit.a = 0
+        init_struct.a = 1
         #     # m2, m1, L1, g, mc, L2
         #     # x, theta1, theta2, omega2, omega1, v, 0, 0 (last two must be zero, dont ask)
-        @time sol = loss(prob, [1, 1, 1, -9.8, 1000,1 ,arg_example(0) ], [0.0, 0.0, 0, 0, 0, 0,0,0])
+        @time sol = loss(prob, [1, 1, 1, -9.8, 1000,1], [0.0, 0.0, 0, 0, 0, 0,0,0])
         plot(sol.t, transpose(sol[1:3, :]))
 
-        ainit.a = 3
+        init_struct.a = 333
         #     # m2, m1, L1, g, mc, L2
         #     # x, theta1, theta2, omega2, omega1, v, 0, 0 (last two must be zero, dont ask)
-        @time sol = loss(prob, [1, 1, 1, -9.8, 1000,1 ,arg_example(0) ], [0.0, 0.0, 0, 0, 0, 0,0,0])
+        @time sol = loss(prob, [1, 1, 1, -9.8, 1000,1], [0.0, 0.0, 0, 0, 0, 0,0,0])
         plot(sol.t, transpose(sol[1:3, :]))
 
-        ainit.a = -0.001
+        init_struct.a = 0
         #     # m2, m1, L1, g, mc, L2
         #     # x, theta1, theta2, omega2, omega1, v, 0, 0 (last two must be zero, dont ask)
-        @time sol = loss(prob, [1, 1, 1, -9.8, 1,1 ,arg_example(0) ], [0.0, 1.0, 0, 0, 0, 0,0,0])
+        @time sol = loss(prob, [1, 1, 1, -9.8, 1,1], [0, π, π, 0, 0, 0,0,0])
         plot(sol.t, transpose(sol[1:3, :]))
     end
     example()
-
-    # function Force(a, b, c)
-    #     return 0.01323
-    # end
-    # Force(1, 1, 1)
-    # props =  [2, 1, 1, -9.8, 50,1 ,Force ]
-    # IC = [1.23343, .5, .3, 0, 0, 0,0,0]
-    # println(ps2)
-    # println("Loss")
-    # @time sol = loss(prob, props, IC)
-    # plot(sol.t, transpose(sol[1:3, :]))
-
-    # function Force(a, b, c)
-    #     return 0.232
-    # end
-    # Force(1, 1, 1)
-    # props =  [2, 1, 1, -9.8, 50,1 ,1, ]
-    # IC = [1.23343, .5, .3, 0, 0, 0,0,0]
-    # println(ps2)
-    # println("Loss")
-    # @time sol = loss(prob, props, IC)
-    # plot(sol.t, transpose(sol[1:3, :]))
-    # # println(sol[3, :])
-
-
-
-
-
 end
-
