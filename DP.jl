@@ -106,5 +106,5 @@ begin
         @time sol = loss(prob, [1, 1, 1, -9.8, 1,1], [0, π, π, 0, 0, 0,0,0])
         plot(sol.t, transpose(sol[1:3, :]))
     end
-    example()
+    # example()
 end
