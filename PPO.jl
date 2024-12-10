@@ -9,14 +9,16 @@ using ModelingToolkit, DifferentialEquations
 include("./DP.jl")
 using Random
 
-function sample_action(policy_net, s)
+function sample_action(policy_net, s; max_action=10.0)
     p = policy_net(s)
     mean_ = p[1:1]
     log_std = p[2:end]
     std_ = exp.(log_std)
     dists = Normal.(mean_, std_)
     a = [rand(d) for d in dists][1]
-    return a, mean_, std_
+
+    a_tanh = tanh(a) * max_action
+    return a_tanh, mean_, std_
 end
 
 
@@ -26,16 +28,16 @@ function logprob_action(a, mean_, std_)
 end
 
 
-function collect_trajectory(prob, params, init_struct, policy_net, value_net, reward_func; dt = 0.001, max_t=20)
+function collect_trajectory(prob, params, init_struct, policy_net, value_net, reward_func; dt = 0.01, max_t=20)
 
-    x = rand() * 4.8 - 2.4             # uniform in [-1, 1]
-    θ1 = (rand() - 0.5) * π            # uniform in [-π/2, π/2]
-    θ2 = (rand() - 0.5) * π            # uniform in [-π/2, π/2]
-    ω1 = rand() * 2.0 - 1.0            # uniform in [-1, 1]
-    ω2 = rand() * 2.0 - 1.0            # uniform in [-1, 1]
-    v  = rand() * 1.0 - 0.5            # uniform in [-0.5, 0.5]
+    x = rand() * 20 - 10
+    θ1 = rand() * 2π
+    θ2 = rand() * 2π
+    ω1 = rand() * 2.0 - 1.0
+    ω2 = rand() * 2.0 - 1.0
+    v  = rand() * 1.0 - 0.5
 
-    ICs = [clamp(x, -1, 1), clamp(θ1, -π/2, π/2), clamp(θ2, -π/2, π/2), ω1, ω2, v, 0, 0]
+    ICs = [x, θ1, θ2, ω1, ω2, v, 0, 0]
     println(ICs)
 
     ps = parameter_values(prob)
@@ -51,7 +53,7 @@ function collect_trajectory(prob, params, init_struct, policy_net, value_net, re
     log_probs = []
 
     t_curr = 0.0
-    while t_curr < max_t
+    while t_curr <= max_t
         # println(integrator.t)
         state = copy(integrator.u[1:6])
         push!(times, integrator.t)
@@ -210,9 +212,8 @@ function runPPO(p, reward_func)
 
                 total_loss, policy_loss, value_loss, entropy = ppo_loss(policy_network, value_network, bs, ba, bolp, badv, bret)
 
-                gs = Zygote.gradient(() -> begin
-                    total_loss
-                end, Flux.params(policy_network, value_network))
+                gs_policy = Zygote.gradient(() -> policy_loss, Flux.params(policy_network))
+                gs_value = Zygote.gradient(() -> value_loss, Flux.params(value_network))
 
                 # Ensure losses are scalar before accumulation
                 total_loss_value += sum(total_loss)
@@ -221,8 +222,8 @@ function runPPO(p, reward_func)
                 total_entropy += sum(entropy)
                 n_batches += 1
 
-                Flux.Optimise.update!(policy_opt, Flux.params(policy_network), gs)
-                Flux.Optimise.update!(value_opt, Flux.params(value_network), gs)
+                Flux.Optimise.update!(policy_opt, Flux.params(policy_network), gs_policy)
+                Flux.Optimise.update!(value_opt, Flux.params(value_network), gs_value)
             end
         end
         avg_loss = total_loss_value / n_batches
@@ -236,35 +237,111 @@ function runPPO(p, reward_func)
         println("  Average Value Loss: $avg_value_loss")
         println("  Average Entropy: $avg_entropy")
     end
-    @save "trained_policy.jld2" policy_network
+
+    @save "mymodel.jld2" policy_network
     println("Policy network saved to trained_policy.jld2")
 end
 
-begin
+function run_experiment()
     p = [1, 1, 1, -9.8, 5,1] # m2, m1, L1, g, mc, L2
 
     function reward_func(state, action)
         x, θ1, θ2, ω1, ω2, v = state
     
-        k_angle = 10.0      # Penalty for pole angles
-        k_position = 1.0    # Penalty for cart position
-        k_velocity = 0.1    # Penalty for cart and angular velocities
-        boundary_penalty = -100.0  # Large penalty for boundary violations
-        max_x = 10.0         # Maximum allowed cart position (e.g., 2.4 for standard cart-pole)
+        k_angle = 10.0
+        k_position = 1.0
+        k_velocity = 0.1
+        boundary_penalty = -100.0
+        max_x = 10.0
     
-        angle_penalty = k_angle * (θ1^2 + θ2^2)
+        θ1_diff = θ1 - π
+        θ2_diff = θ2 - π
     
-        position_penalty = k_position * x^2
-    
-        velocity_penalty = k_velocity * (v^2 + ω1^2 + ω2^2)
-    
-        if abs(x) > max_x || abs(θ1) > π/2 || abs(θ2) > π/2
-            return boundary_penalty
-        end
-    
-        reward = -(angle_penalty + position_penalty + velocity_penalty)
+        angle_reward = -((θ1 - π)^2 + (θ2 - π)^2)
+        position_reward = -(x^2)
+        reward = angle_reward + position_reward
         return reward
     end
     
+    
     runPPO(p, reward_func)
 end
+
+function test_model()
+    @load "mymodel.jld2" policy_network
+
+    policy_network = f64(policy_network)
+
+    value_network = Chain(
+        Dense(6, 64, relu),
+        Dense(64, 64, relu),
+        Dense(64, 1)
+    )
+
+    policy_network = f64(policy_network)
+    value_network = f64(value_network)
+
+    function FORCE(x, θ1, θ2, v, ω1, ω2, ARGS)
+        a = ARGS.a
+        # println("a in force func: $a")
+        return ARGS.a
+    end
+
+    p = [1, 1, 1, -9.8, 5, 1]
+
+    sys = createSystem(force_arg)
+    init_struct = force_arg(0)
+    prob = createProblem(sys, FORCE, init_struct)
+
+
+    # Define the reward function (same as during training)
+    function reward_func(state, action)
+        x, θ1, θ2, ω1, ω2, v = state
+
+        k_angle = 10.0
+        k_position = 1.0
+        k_velocity = 0.1
+        boundary_penalty = -100.0
+        max_x = 10.0
+
+        θ1_diff = θ1 - π
+        θ2_diff = θ2 - π
+
+        angle_penalty = k_angle * (θ1_diff^2 + θ2_diff^2)
+        position_penalty = k_position * x^2
+        velocity_penalty = k_velocity * (v^2 + ω1^2 + ω2^2)
+
+        if abs(x) > max_x || abs(θ1_diff) > π/2 || abs(θ2_diff) > π/2
+            return boundary_penalty
+        end
+
+        reward = -(angle_penalty + position_penalty + velocity_penalty)
+        return reward
+    end
+
+    # Re-create or load the environment
+    sys = createSystem(force_arg)
+    init_struct = force_arg(0)
+    prob = createProblem(sys, FORCE, init_struct)
+
+    # Create a value network (or load a trained one if you have it saved)
+    value_network = Chain(
+        Dense(6, 64, relu),
+        Dense(64, 64, relu),
+        Dense(64, 1)
+    ) |> f64
+
+    # Collect a trajectory using the loaded policy
+    states, actions, rewards, log_probs, values, final_value = collect_trajectory(prob, p, init_struct, policy_network, value_network, reward_func; dt=0.01, max_t=20)
+    times = 0.01:0.01:20
+    println(actions)
+
+    # Extract x, θ1, θ2 from states
+    x_vals = map(s -> s[1], states)
+    θ1_vals = map(s -> s[2], states)
+    θ2_vals = map(s -> s[3], states)
+
+    # Plot x, θ1, θ2 vs time
+    plot(times, [x_vals θ1_vals θ2_vals], label=["x" "θ1" "θ2"], xlabel="Time", ylabel="State values")
+end
+test_model()
