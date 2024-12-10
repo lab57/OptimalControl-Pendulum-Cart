@@ -4,8 +4,10 @@ using Zygote
 using Distributions
 using StatsBase
 using ProgressMeter
+include("./DP.jl")
 
-env = MyDoubleCartPoleEnv() # Here is whre we will import the environment
+
+
 ns = length(state(env))       # number of state variables
 
 
@@ -40,7 +42,11 @@ function logprob_action(a, mean_, std_)
     return sum(log_probs)
 end
 
-# This will depend on the environment
+
+function collect_trajectory(policy_net, value_net)
+    
+
+end
 
 # function collect_trajectory(env, policy_net, value_net; max_steps=2048)
 #     states = Vector{Vector{Float64}}()
@@ -174,4 +180,18 @@ for iteration in 1:iterations
     end
 
     println("Iteration: $iteration completed.")
+end
+
+function runPPO()
+
+    mutable struct force_arg 
+        a::Float64
+        b::Float64
+    end
+
+    function FORCE(x, θ1, θ2, v, ω1, ω2, ARGS)
+        return 0
+    end
+
+    HO = createSystem(force_arg)
 end

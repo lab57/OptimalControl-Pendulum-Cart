@@ -68,7 +68,7 @@ begin
         # println(ps[1])
         ps = replace(Tunable(), ps, x)
         newprob = remake(prob; u0=ICs, p=ps )
-        sol = solve(newprob,ImplicitMidpoint(),dt=0.05)
+        sol = solve(newprob,ImplicitMidpoint(),dt=0.01)
         return sol
     end
 
@@ -86,8 +86,6 @@ begin
         sys = createSystem(force_arg)
         init_struct = force_arg(0, 0)
         prob = createProblem(sys,FORCE, init_struct)
-        sol = solve(prob, ImplicitMidpoint(), dt=0.05) 
-        plot(sol.t, transpose(sol[1:3, :]))
 
 
         init_struct.a = 1
