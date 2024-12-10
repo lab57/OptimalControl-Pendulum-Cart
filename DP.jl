@@ -53,8 +53,7 @@ begin
     end
 
 
-    function createProblem(sys, H, arginit)
-        tspan = (0, 20) 
+    function createProblem(sys, H, arginit, tspan = (0,20))
         # IC = [sys.x=>.2, sys.θ1=>.1, sys.θ2=>.1, sys.dx=>0, sys.dθ1=>0, sys.dθ2=>0]
         IC = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0,0.0,0.0]
         ps = [sys.mc=>100, sys.m1=> 1, sys.m2 => 1, sys.L1 => 1, sys.L2=>1, sys.g=>-9.8, sys.H => H, sys.ARGS=>arginit]
