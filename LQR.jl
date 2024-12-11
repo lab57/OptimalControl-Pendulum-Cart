@@ -57,7 +57,9 @@ begin
 
 
         # Substitute and evaluate
-        J_eval = substitute.(J, (all_subs,))
+        # J_eval = substitute.(J, (all_subs,))
+        J_eval = substitute.(J, :dθ2ˍt => 1)
+
         
         # Convert to numeric matrix
         try
