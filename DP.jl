@@ -143,39 +143,40 @@ begin
         return sol;
     end
 
-    mutable struct force_arg 
+    mutable struct force_arg_temp
         a::Float64
         b::Float64
     end
     function example()
         
         function FORCE(x, θ1, θ2, v, ω1, ω2, ARGS)
-            return 0;
+            # println("Called")
+            return 1
         end
 
 
-        sys = createSystem(force_arg);
-        init_struct = force_arg(0, 0);
-        prob = createProblem(sys,FORCE, init_struct);
+        sys = createSystem(force_arg_temp)
+        init_struct = force_arg_temp(0, 0)
+        prob = createProblem(sys,FORCE, init_struct)
 
 
-        init_struct.a = 1
+        # init_struct.a = 1
         #     # m2, m1, L1, g, mc, L2
         #     # x, theta1, theta2, omega2, omega1, v, 0, 0 (last two must be zero, dont ask)
-        @time sol = loss(prob, [1, 1, 1, -9.8, 1000,1], [0.0, 0.0, 0, 0, 0, 0,0,0])
+        @time sol = loss(prob, [1, 1, 1, -9.8, 100,1], [0.5057712834729895, 0.2669700172971429, 1.5173641625250842, -0.6527978442187805, -0.6379579492136955, -0.15572373086046365, 0.0, 0.0])
         plot(sol.t, transpose(sol[1:3, :]))
 
-        init_struct.a = 333
-        #     # m2, m1, L1, g, mc, L2
-        #     # x, theta1, theta2, omega2, omega1, v, 0, 0 (last two must be zero, dont ask)
-        @time sol = loss(prob, [1, 1, 1, -9.8, 1000,1], [0.0, 0.0, 0, 0, 0, 0,0,0])
-        plot(sol.t, transpose(sol[1:3, :]))
+        # init_struct.a = 333
+        # #     # m2, m1, L1, g, mc, L2
+        # #     # x, theta1, theta2, omega2, omega1, v, 0, 0 (last two must be zero, dont ask)
+        # @time sol = loss(prob, [1, 1, 1, -9.8, 1000,1], [0.0, 0.0, 0, 0, 0, 0,0,0])
+        # plot(sol.t, transpose(sol[1:3, :]))
 
-        init_struct.a = 0
-        #     # m2, m1, L1, g, mc, L2
-        #     # x, theta1, theta2, omega2, omega1, v, 0, 0 (last two must be zero, dont ask)
-        @time sol = loss(prob, [1, 1, 1, -9.8, 1,1], [0, π, π, 0, 0, 0,0,0])
-        plot(sol.t, transpose(sol[1:3, :]))
+        # init_struct.a = 0
+        # #     # m2, m1, L1, g, mc, L2
+        # #     # x, theta1, theta2, omega2, omega1, v, 0, 0 (last two must be zero, dont ask)
+        # @time sol = loss(prob, [1, 1, 1, -9.8, 1,1], [0, π, π, 0, 0, 0,0,0])
+        # plot(sol.t, transpose(sol[1:3, :]))
     end
     # example()
 end
