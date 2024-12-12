@@ -4,6 +4,7 @@ using Symbolics
 using SciMLStructures:Tunable, replace, replace!
 using SymbolicIndexingInterface: parameter_values, state_values
 using ModelingToolkit: Nonnumeric
+using SciMLSensitivity
 
 begin
     function createSystem( H_ARG::DataType)
@@ -79,32 +80,47 @@ begin
         
         function FORCE(x, θ1, θ2, v, ω1, ω2, ARGS)
             # println("Called")
-            return 1
+            return 0
         end
-
 
         sys = createSystem(force_arg_temp)
         init_struct = force_arg_temp(0, 0)
         prob = createProblem(sys,FORCE, init_struct)
 
+        ICs = [0, π/2, π, 0, 0, 0, 0, 0]
 
-        # init_struct.a = 1
-        #     # m2, m1, L1, g, mc, L2
-        #     # x, theta1, theta2, omega2, omega1, v, 0, 0 (last two must be zero, dont ask)
-        @time sol = loss(prob, [1, 1, 1, -9.8, 100,1], [0.5057712834729895, 0.2669700172971429, 1.5173641625250842, -0.6527978442187805, -0.6379579492136955, -0.15572373086046365, 0.0, 0.0])
-        plot(sol.t, transpose(sol[1:3, :]))
 
-        # init_struct.a = 333
-        # #     # m2, m1, L1, g, mc, L2
-        # #     # x, theta1, theta2, omega2, omega1, v, 0, 0 (last two must be zero, dont ask)
-        # @time sol = loss(prob, [1, 1, 1, -9.8, 1000,1], [0.0, 0.0, 0, 0, 0, 0,0,0])
-        # plot(sol.t, transpose(sol[1:3, :]))
+        println("Initial Conditions: $ICs")
+        params = [1, 1, 1, -9.8, 1, 1]
 
-        # init_struct.a = 0
-        # #     # m2, m1, L1, g, mc, L2
-        # #     # x, theta1, theta2, omega2, omega1, v, 0, 0 (last two must be zero, dont ask)
-        # @time sol = loss(prob, [1, 1, 1, -9.8, 1,1], [0, π, π, 0, 0, 0,0,0])
-        # plot(sol.t, transpose(sol[1:3, :]))
+        # Update Problem Parameters
+        ps = parameter_values(prob)
+        ps = replace(Tunable(), ps, params)
+        newprob = remake(prob; u0=ICs, p=ps)
+
+
+        dt = 0.01
+        integrator = init(newprob, ImplicitMidpoint(), dt=dt)
+
+        times = Float64[]
+        states = Vector{Vector{Float64}}()
+
+        t_curr = 0.0
+        max_t = 20.0
+        while t_curr <= max_t
+            state = copy(integrator.u[1:6])
+            push!(times, t_curr)
+            push!(states, state)
+
+
+            step!(integrator, dt, true)
+            
+            t_curr += dt
+        end
+
+        states_matrix = hcat(states...)
+        plot(times, states_matrix[1:3, :]')
+
     end
-    # example()
+    example()
 end

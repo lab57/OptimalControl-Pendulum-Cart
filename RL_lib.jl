@@ -277,7 +277,7 @@ begin
             positions[step, :] = env.state[1:3]  # x, θ1, θ2
             velocities[step, :] = env.state[4:6]  # dx, dθ1, dθ2
             rewards[step] = reward(env)
-            actions[step] = env.action
+            actions[step] = env.force_func
             
             # Break if environment is done
             if is_terminated(env)
