@@ -18,43 +18,36 @@ begin
         return J;
     end
      
-    function evaluate_jacobian(J,subsitution_values)
-
-        variables = unique(v for row in eachrow(J) for el in row for v in get_variables(el))
-        variables = sort(variables, by=string)
-
-        # println(length(variables))
-        # println(variables)
-
+    function evaluate_jacobian(sys, inputs)
+        j = ModelingToolkit.expand_derivatives.(calculate_jacobian(sys))
+        states = unknowns(sys)
+        params = parameters(sys)
         st_d = Dict(
             [
-                variables[1] => subsitution_values[1],
-                variables[2] => subsitution_values[2],
-                variables[3] => subsitution_values[3],
-                variables[4] => subsitution_values[4],
-                variables[5] => subsitution_values[5],
-                variables[6] => subsitution_values[6],
-                variables[7] => subsitution_values[7],
-                variables[8] => subsitution_values[8],
-                variables[9] => subsitution_values[9],
-                variables[10] => subsitution_values[10],
-                variables[11] => subsitution_values[11],
-                variables[12] => subsitution_values[12],
+            sys.x => inputs[1], 
+            sys.θ1 => inputs[2], 
+            sys.θ2 => inputs[3], 
+            sys.dx => inputs[4], 
+            sys.dθ1 => inputs[5], 
+            sys.dθ2 => inputs[6],
+            unknowns(sys)[7] => inputs[7],
+            unknowns(sys)[8]=> inputs[8],
+            sys.m1 => 1,
+            sys.m2 => 1,
+            sys.mc => 5,
+            sys.g => -9.8,
+            sys.L1 => 1,
+            sys.L2 => 1           
             ]
         )
-        evalJ = substitute(J, st_d)
-        # println()
-        # println(evalJ)
-        # println()
 
-        return evalJ
+        evalj = substitute(j, st_d)
+
+        return evalj
     end
 
     #B matrix
     function calculate_parametric_jacobian()
-        # @independent_variables t
-        # Define system parameters
-        # @parameters  mc m1 m2 L1 L2 g H(::Real, ::Real, ::Real, ::Real, ::Real, ::Real, ::H_ARG) ARGS::H_ARG
         m_cart = 100
         m1 = 1
         m2 = 1
@@ -83,63 +76,107 @@ begin
     
 
 
-    function lmao()
+    function calculateK(inputs, Q, R)
             
         function FORCE(x, θ1, θ2, v, ω1, ω2, ARGS)
             return 0
         end
 
-        @independent_variables t
-        @variables x(t) θ1(t) θ2(t) dx(t) dθ1(t) dθ2(t) dθ1_t(t) dmc m1 m2
-
         sys = createSystemNoExt(force_arg_temp);
         init_struct = force_arg_temp(0, 0);
-        # createProblem(sys, H, arginit, IC=nothing, tspan = (0,20))
-        state_variables = [1,1,1,1,1,1]
+        state_variables = inputs[1:6]
 
         prob = createProblem(sys,FORCE, init_struct, state_variables, (0,.1));
 
-        
-        A = calculate_symbolic_jacobian(sys);
-        
-        # x(t) θ1(t) θ2(t) dx(t) dθ1(t) dθ2(t) dθ1_t(t)
-
-        state_params = []
-
-        #[L1, L2, dθ1(t), dθ1ˍt(t), dθ2(t), dθ2ˍt(t), g, m1, m2, mc, θ1(t), θ2(t)        
-
-        substitution_values = [1,1,1,1,1,1,1,1,1,1,1,1]
-
         # Evaluate the Jacobian
-        A_evaluated = evaluate_jacobian(A, substitution_values)
+        A_evaluated = Float64.((evaluate_jacobian(sys,inputs))[1:6,1:6])
+        B = Float64.(calculate_parametric_jacobian());
 
-        B = calculate_parametric_jacobian();
-        # Penalize deviations in state variables
-        Q = Diagonal([10.0, 1.0, 100.0, 1.0, 100.0, 1.0]) ; # Adjust weights as needed
+        L = lqr(Discrete,A_evaluated,B,Q,R) 
+        return L;
 
-        # Penalize control effort
-        R = [1.0];  # Single input, so this is scalar
-        A_evaluated = A_evaluated[1:6, 1:6]
-        # println(A_evaluated)
-        # println(length(A_evaluated))
-        lqr_result = lqr(Discrete,A,B,Q,R)
-        println(lqr_result)
-        # A_numeric = substitute(A, subs_dict)
-        # println(typeof(A))
-        # println(typeof(A[end]))
-        # println(A[end])
-        # println(typeof(A[end][end]))
-        # println(A[end][end])
-
-        # print('\n')
-        # print('\n')
-
-        # println(A_evaluated);
-        # println(B)
-        # println(Q)
-        # println(R)
 
     end
 
-    lmao()
+    function setup_system(initial_state, dt)
+        function FORCE(x, θ1, θ2, v, ω1, ω2, ARGS)
+            return 0;
+        end
+        
+        # sys = createSystem(force_arg_temp)  # Using your force_arg struct
+        # init_struct = force_arg_temp(0,0)  # Initial force of 0
+        # prob = createProblem(sys, FORCE, init_struct)
+        
+
+        sys = createSystem(force_arg_temp)
+        init_struct = force_arg_temp(0, 0)
+        prob = createProblem(sys,FORCE, init_struct)
+
+
+        # Add the two additional state variables as in your example
+        ICs = [initial_state..., 0, 0]
+        
+        params = [1, 1, 1, -9.8, 1, 1]  # Your standard parameters
+        
+        # Update Problem Parameters using your method
+        ps = parameter_values(prob)
+        ps = replace(Tunable(), ps, params)
+        newprob = remake(prob; u0=ICs, p=ps)
+        
+        integrator = init(newprob, ImplicitMidpoint(), dt=dt)
+        return integrator, init_struct
+    end
+    
+    function step_system(integrator, init_struct, current_state, Q, R, dt)
+        # Recalculate K for current state
+        K = calculateK(current_state, Q, R)
+        
+        # Calculate control input
+        u = -K * current_state
+        init_struct.a = u[1]  # Update force in init_struct
+        
+        # Step forward
+        step!(integrator, dt, true)
+        
+        # Return new state (first 6 components as in your example)
+        return copy(integrator.u[1:6])
+    end
+    
+    function run_until_complete(initial_state, Q, R, dt; max_t=20.0, max_x=10.0)
+        integrator, init_struct = setup_system(initial_state, dt)
+        
+        times = Float64[]
+        states = Vector{Vector{Float64}}()
+        controls = Float64[]
+        
+        t_curr = 0.0
+        current_state = copy(initial_state)
+        
+        while t_curr <= max_t
+            push!(times, t_curr)
+            push!(states, current_state)
+            
+            # Check termination
+            x = current_state[1]
+            if abs(x) > max_x
+                break
+            end
+            
+            # Step forward
+            current_state = step_system(integrator, init_struct, current_state, Q, R, dt)
+            t_curr += dt
+            
+            # Store control input
+            push!(controls, init_struct.a)
+        end
+        
+        return times, states, controls
+    end
+
+
+    initial_state = [1.0,1.0,1.0,1.0,1.0,1.0]
+    Q = Diagonal([10.0, 1.0, 100.0, 1.0, 100.0, 1.0])
+    R = [1.0]
+    times, states = run_until_complete(initial_state, Q, R, 0.01)
+
 end
