@@ -94,15 +94,17 @@ begin
         init_struct = force_arg_temp(0, 0);
         state_variables = inputs[1:6] 
 
-        prob = createProblem(sys,FORCE, init_struct, state_variables, (0,.1));
+        # @time prob = createProblem(sys,FORCE, init_struct, state_variables, (0,.1));
 
         # Evaluate the Jacobian
 
 
+        #.02 sec
         A_evaluated = Float64.((evaluate_jacobian(j,sys,inputs))[[1:3; 6:end], [1:3; 6:end]])
         # A_evaluated = Float64.((evaluate_jacobian(j,sys,inputs))[1:6, 1:6]);
         B = Float64.(calculate_parametric_jacobian());
 
+        #.0004s
         L = lqr(Discrete,A_evaluated,B,Q,R) 
         return L;
     end
@@ -139,14 +141,46 @@ begin
         return integrator, init_struct, j
     end
     
+    function calculate_angle_error(current_angle, reference_angle)
+        # Normalize angles to [-π, π] range
+        error = mod(current_angle - reference_angle + π, 2π) - π
+        return error
+    end
+
     function step_system(integrator, init_struct, current_state, j, Q, R, dt)
         xref = [0.0, π, π, 0.0, 0.0, 0.0]
     
         # Recalculate K for current state
+
+        #1.1 seconds
         K = calculateK(current_state, j, Q, R)
         
+
+        angle_errors = [
+            calculate_angle_error(current_state[2], xref[2]),  # θ1 error
+            calculate_angle_error(current_state[3], xref[3])   # θ2 error
+        ]
+        
+        # Construct error state with corrected angle errors
+        error_state = [
+            current_state[1] - xref[1],     # x error
+            angle_errors[1],                # θ1 error
+            angle_errors[2],                # θ2 error
+            current_state[4] - xref[4],     # dx error
+            current_state[5] - xref[5],     # dθ1 error
+            current_state[6] - xref[6]      # dθ2 error
+        ]
+
         # Calculate control input relative to reference state
-        u = -K * (current_state[1:6] - xref)
+        println("Current Error State: ", error_state)
+    
+        # Recalculate K for current state
+        K = calculateK(current_state, j, Q, R)
+        
+        # Calculate control input
+        u = -K * error_state
+        println("Control Input: ", u)
+    
 
         init_struct.a = u[1]  # Update force in init_struct
         
@@ -241,10 +275,10 @@ begin
         return gif(anim, "pendulum.gif", fps=fps)
     end
 
-    initial_state = [0.1, 3, 3, 0.0, 0.0, 0.0,0,0]
-    Q = Float64.(Diagonal([10.0, 100.0, 100.0, 1.0, 1.0, 1.0]))
-    R = I
-    times, states, controls = run_until_complete(initial_state, Q, R, 0.001)
+    initial_state = [-0.1, 3.05, 3.05, 0.0, 0.0, 0.0,0,0]
+    Q = Float64.(Diagonal([3.0, 50.0, 50.0, 1.0, 50.0, 50.0]))
+    R = I * 0.1
+    times, states, controls = run_until_complete(initial_state, Q, R, 0.002)
 
     animation = animate_pendulum(times,states)
 
