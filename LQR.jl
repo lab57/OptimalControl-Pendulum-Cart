@@ -14,63 +14,40 @@ begin
 
     # Function to calculate the Jacobian matrix
     function calculate_symbolic_jacobian(sys)
-        @parameters t
-        
-        # Get the equations and states
-        eqs = equations(sys)  # Assumes `sys` has an `equations` function or field
-        states = [sys.x, sys.θ1, sys.θ2, sys.dx, sys.dθ1, sys.dθ2]  
-        rhs = [eq.rhs for eq in eqs]
-    
-    # Calculate Jacobian of RHS with respect to states
-        J = Symbolics.jacobian(rhs, states)
+        J = expand_derivatives.(calculate_jacobian(sys));
         return J;
-        # return A
     end
      
-    function evaluate_jacobian(J, state_params, system_params)
-        @independent_variables t
-        @variables dθ1(t) dθ2(t) dθ1ˍt(t) dθ2ˍt(t)
-        # Create substitution dictionary
-        all_subs = Dict()
-        
-        # First add all our direct parameter values
-        
-        all_symbols = Set()
-        for element in J
-            union!(all_symbols, Symbolics.get_variables(element))
-        end
+    function evaluate_jacobian(J,subsitution_values)
 
-        merge!(all_subs, state_params, system_params)
+        variables = unique(v for row in eachrow(J) for el in row for v in get_variables(el))
+        variables = sort(variables, by=string)
 
-        print('\n')
+        # println(length(variables))
+        # println(variables)
 
-        print('\n')
-        print(all_subs)
-        print('\n')
-        print('\n')
+        st_d = Dict(
+            [
+                variables[1] => subsitution_values[1],
+                variables[2] => subsitution_values[2],
+                variables[3] => subsitution_values[3],
+                variables[4] => subsitution_values[4],
+                variables[5] => subsitution_values[5],
+                variables[6] => subsitution_values[6],
+                variables[7] => subsitution_values[7],
+                variables[8] => subsitution_values[8],
+                variables[9] => subsitution_values[9],
+                variables[10] => subsitution_values[10],
+                variables[11] => subsitution_values[11],
+                variables[12] => subsitution_values[12],
+            ]
+        )
+        evalJ = substitute(J, st_d)
+        # println()
+        # println(evalJ)
+        # println()
 
-
-
-        # all_subs[dθ1ˍt(t)] = all_subs[dθ1(t)]
-        # all_subs[dθ2ˍt(t)] = all_subs[dθ2(t)]
-
-
-
-        # Substitute and evaluate
-        # J_eval = substitute.(J, (all_subs,))
-        J_eval = substitute.(J, :dθ2ˍt => 1)
-
-        
-        # Convert to numeric matrix
-        try
-            J_numeric = float.(J_eval)
-            return J_numeric
-        catch e
-            println("Error during numeric conversion: ", e)
-            println("Non-numeric terms remaining in:")
-            display(J_eval)
-            return J_eval
-        end
+        return evalJ
     end
 
     #B matrix
@@ -115,46 +92,26 @@ begin
         @independent_variables t
         @variables x(t) θ1(t) θ2(t) dx(t) dθ1(t) dθ2(t) dθ1_t(t) dmc m1 m2
 
-        IC = [1,1,1,1,1,1];
-        sys = createSystemNoExt(force_arg);
-        init_struct = force_arg(0, 0);
+        sys = createSystemNoExt(force_arg_temp);
+        init_struct = force_arg_temp(0, 0);
         # createProblem(sys, H, arginit, IC=nothing, tspan = (0,20))
-        prob = createProblem(sys,FORCE, init_struct, IC, (0,.1));
+        state_variables = [1,1,1,1,1,1]
 
-        # subs_dict = Dict(Differential(x) => dx, Differential(θ1) => dθ1, Differential(θ2) => 100, x => IC[1], θ1 => IC[2], θ2 => IC[3], mc => 100, m1 =>1, mc =>1)
+        prob = createProblem(sys,FORCE, init_struct, state_variables, (0,.1));
+
         
         A = calculate_symbolic_jacobian(sys);
+        
+        # x(t) θ1(t) θ2(t) dx(t) dθ1(t) dθ2(t) dθ1_t(t)
 
-        # symbols = Symbolics.get_variables(A)
+        state_params = []
 
-        # # For your Jacobian matrix
-        # all_symbols = Set()
-        # for element in A
-        #     union!(all_symbols, Symbolics.get_variables(element))
-        # end
-        # println(all_symbols)
+        #[L1, L2, dθ1(t), dθ1ˍt(t), dθ2(t), dθ2ˍt(t), g, m1, m2, mc, θ1(t), θ2(t)        
 
-        state_params = Dict(
-            sys.x => 1.0,
-            sys.θ1 => 1.0,
-            sys.θ2 => 1.0,
-            sys.dx => 1.0,
-            sys.dθ1 => 1.0,
-            sys.dθ2 => 1.0,
-        )
-
-        # Example system parameters
-        system_params = Dict(
-            sys.mc => 100.0,
-            sys.m1 => 1.0,
-            sys.m2 => 1.0,
-            sys.L1 => 1.0,
-            sys.L2 => 1.0,
-            sys.g => -9.8
-        )
+        substitution_values = [1,1,1,1,1,1,1,1,1,1,1,1]
 
         # Evaluate the Jacobian
-        A_evaluated = simplify(evaluate_jacobian(A, state_params, system_params))
+        A_evaluated = evaluate_jacobian(A, substitution_values)
 
         B = calculate_parametric_jacobian();
         # Penalize deviations in state variables
@@ -162,14 +119,22 @@ begin
 
         # Penalize control effort
         R = [1.0];  # Single input, so this is scalar
-
+        A_evaluated = A_evaluated[1:6, 1:6]
+        # println(A_evaluated)
+        # println(length(A_evaluated))
+        lqr_result = lqr(Discrete,A,B,Q,R)
+        println(lqr_result)
         # A_numeric = substitute(A, subs_dict)
+        # println(typeof(A))
+        # println(typeof(A[end]))
+        # println(A[end])
+        # println(typeof(A[end][end]))
+        # println(A[end][end])
 
-        print(A)
-        print('\n')
-        print('\n')
+        # print('\n')
+        # print('\n')
 
-        println(A_evaluated);
+        # println(A_evaluated);
         # println(B)
         # println(Q)
         # println(R)
